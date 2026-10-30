@@ -1,0 +1,15 @@
+{
+  "_comment": "Simulated library loan source. Fictional data only. due_in_days is relative to the day the sync runs, so every demo scenario stays reproducible.",
+  "loans": [
+    { "external_loan_ref": "L-1001", "borrower_email": "ana.reyes@example.test",   "item_title": "Database Systems Concepts",   "item_barcode": "BC-0001", "due_in_days": 3 },
+    { "external_loan_ref": "L-1002", "borrower_email": "ben.cruz@example.test",    "item_title": "Clean Code",                  "item_barcode": "BC-0002", "due_in_days": 0 },
+    { "external_loan_ref": "L-1003", "borrower_email": "carla.santos@example.test", "item_title": "Operating System Concepts",   "item_barcode": "BC-0003", "due_in_days": -1 },
+    { "external_loan_ref": "L-1004", "borrower_email": "ana.reyes@example.test",   "item_title": "Computer Networks",           "item_barcode": "BC-0004", "due_in_days": -7 },
+    { "external_loan_ref": "L-1005", "borrower_email": "ben.cruz@example.test",    "item_title": "Software Engineering",        "item_barcode": "BC-0005", "due_in_days": -14 },
+    { "external_loan_ref": "L-1006", "borrower_email": "dino.lim-at-example.test", "item_title": "Introduction to Algorithms",  "item_barcode": "BC-0006", "due_in_days": -1 },
+    { "external_loan_ref": "L-1007", "borrower_email": "carla.santos@example.test", "item_title": "Discrete Mathematics",        "item_barcode": "BC-0007", "due_in_days": 10 },
+
+    { "external_loan_ref": "L-9001", "borrower_email": "nobody@example.test",      "item_title": "Unknown Borrower Case",       "item_barcode": "BC-9001", "due_in_days": 2 },
+    { "external_loan_ref": "L-9002", "borrower_email": "ana.reyes@example.test",   "item_title": "Invalid Due Date Case",       "item_barcode": "BC-9002", "due_in_days": "abc" }
+  ]
+}
