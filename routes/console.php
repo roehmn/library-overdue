@@ -33,3 +33,10 @@ Schedule::command('notices:dispatch')
 Schedule::command('notices:recover')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+
+// 17:00 - email the daily exception summary to the supervisor.
+Schedule::command('notices:summary')
+    ->dailyAt('17:00')
+    ->timezone('Asia/Manila')
+    ->withoutOverlapping();
