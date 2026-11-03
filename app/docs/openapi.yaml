@@ -1,0 +1,679 @@
+openapi: 3.0.3
+info:
+  title: Library Overdue Notification System API
+  version: 0.1.0
+  description: |
+    Contract for the Flutter Web client (Project 14, Week 13 draft).
+    Fictional, controlled data only. Local demo server.
+
+    **Roles:** borrower, librarian, supervisor. Each operation lists the roles allowed in `x-roles`.
+    Borrowers can only act on their own loans (403 otherwise).
+
+    **Errors** always use one envelope so the client handles failures in one place:
+    `{"error": {"code": "...", "message": "...", "fields": {...}}}` (`fields` only for 422).
+servers:
+  - url: http://127.0.0.1:8000/api/v1
+    description: Local demo server (HTTPS is added in Week 14)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Borrower
+  - name: Loans
+  - name: Notices
+  - name: Summary
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and receive an access token
+      security: []
+      x-roles: [everyone]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Email or password is incorrect (code INVALID_CREDENTIALS)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: The logged-in user
+      x-roles: [borrower, librarian, supervisor]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: End the session (revokes the current token)
+      x-roles: [borrower, librarian, supervisor]
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /me/loans:
+    get:
+      tags: [Borrower]
+      summary: My loans
+      x-roles: [borrower]
+      responses:
+        '200':
+          description: The borrower's own loans (empty list when none)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Loan'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /me/notices:
+    get:
+      tags: [Borrower]
+      summary: Notices I received
+      x-roles: [borrower]
+      responses:
+        '200':
+          description: The borrower's own notices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /loans:
+    get:
+      tags: [Loans]
+      summary: Review loans
+      x-roles: [librarian, supervisor]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/LoanStatus'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+      responses:
+        '200':
+          description: A page of loans (empty list when none match)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Loan'
+                  page:
+                    type: integer
+                  last_page:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /loans/{id}:
+    get:
+      tags: [Loans]
+      summary: One loan with its notices, renewals, disputes and audit trail
+      x-roles: [librarian, supervisor]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Loan detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanDetail'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /loans/{id}/return:
+    post:
+      tags: [Loans]
+      summary: Record a return (cancels pending notices and closes the case)
+      x-roles: [librarian, supervisor]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Loan returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Loan'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StateConflict'
+
+  /loans/{id}/renewals:
+    post:
+      tags: [Borrower]
+      summary: Request a renewal for my loan
+      x-roles: [borrower]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '201':
+          description: Renewal requested
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Renewal'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StateConflict'
+
+  /loans/{id}/disputes:
+    post:
+      tags: [Borrower]
+      summary: Dispute an overdue notice on my loan
+      x-roles: [borrower]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 10
+                  maxLength: 1000
+      responses:
+        '201':
+          description: Dispute filed (escalation is paused until it is decided)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispute'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /renewals/{id}:
+    patch:
+      tags: [Loans]
+      summary: Approve or reject a renewal
+      x-roles: [librarian, supervisor]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [approve, reject]
+      responses:
+        '200':
+          description: Decision recorded (approval resets the due date and cancels pending notices)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Renewal'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /disputes/{id}:
+    patch:
+      tags: [Loans]
+      summary: Decide a dispute
+      x-roles: [librarian, supervisor]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, note]
+              properties:
+                decision:
+                  type: string
+                  enum: [upheld, rejected]
+                note:
+                  type: string
+                  minLength: 5
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispute'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /notices:
+    get:
+      tags: [Notices]
+      summary: List notices, for example the manual-review queue
+      x-roles: [librarian, supervisor]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/NoticeStatus'
+      responses:
+        '200':
+          description: Notices (empty list when none match)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /notices/{id}/resolve:
+    post:
+      tags: [Notices]
+      summary: Record manual handling of a notice in manual review
+      x-roles: [librarian, supervisor]
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note:
+                  type: string
+                  minLength: 5
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Notice resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notice'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StateConflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /summary:
+    get:
+      tags: [Summary]
+      summary: Daily exception summary (same data as the 17:00 email)
+      x-roles: [supervisor]
+      parameters:
+        - name: date
+          in: query
+          description: Defaults to today (Asia/Manila)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: The summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Summary'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token returned by POST /auth/login
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  responses:
+    Unauthenticated:
+      description: Not logged in, or the token expired or was revoked (code UNAUTHENTICATED)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Logged in, but this role may not do this (code FORBIDDEN)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: No such resource (code NOT_FOUND)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    StateConflict:
+      description: The request is valid but conflicts with the current state, e.g. the loan is already returned (code STATE_CONFLICT)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationFailed:
+      description: Invalid input (code VALIDATION_FAILED, with per-field messages)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: VALIDATION_FAILED
+            message:
+              type: string
+            fields:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      description: Minimal on purpose (data minimization). No email is returned.
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+          enum: [borrower, librarian, supervisor]
+
+    LoanStatus:
+      type: string
+      enum: [active, overdue, disputed, returned, closed]
+
+    NoticeStatus:
+      type: string
+      enum: [pending, sending, retry_scheduled, sent, manual_review, resolved, cancelled]
+
+    Loan:
+      type: object
+      properties:
+        id:
+          type: integer
+        external_loan_ref:
+          type: string
+          example: L-1001
+        item_title:
+          type: string
+        due_date:
+          type: string
+          format: date
+        returned_at:
+          type: string
+          format: date
+          nullable: true
+        renewal_count:
+          type: integer
+        status:
+          $ref: '#/components/schemas/LoanStatus'
+        days_overdue:
+          type: integer
+          description: 0 when not overdue
+
+    Notice:
+      type: object
+      properties:
+        id:
+          type: integer
+        loan_id:
+          type: integer
+        type:
+          type: string
+          enum: [reminder_3d, reminder_due, overdue_1d, escalation_librarian_7d, escalation_supervisor_14d]
+        status:
+          $ref: '#/components/schemas/NoticeStatus'
+        attempts:
+          type: integer
+        last_error:
+          type: string
+          nullable: true
+        sent_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Renewal:
+      type: object
+      properties:
+        id:
+          type: integer
+        loan_id:
+          type: integer
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        new_due_date:
+          type: string
+          format: date
+          nullable: true
+
+    Dispute:
+      type: object
+      properties:
+        id:
+          type: integer
+        loan_id:
+          type: integer
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [open, upheld, rejected]
+        decision_note:
+          type: string
+          nullable: true
+
+    AuditEntry:
+      type: object
+      properties:
+        action:
+          type: string
+        from_state:
+          type: string
+          nullable: true
+        to_state:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    LoanDetail:
+      allOf:
+        - $ref: '#/components/schemas/Loan'
+        - type: object
+          properties:
+            notices:
+              type: array
+              items:
+                $ref: '#/components/schemas/Notice'
+            renewals:
+              type: array
+              items:
+                $ref: '#/components/schemas/Renewal'
+            disputes:
+              type: array
+              items:
+                $ref: '#/components/schemas/Dispute'
+            audit_trail:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditEntry'
+
+    Summary:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        manual_review:
+          type: array
+          items:
+            type: object
+        recovered:
+          type: array
+          items:
+            type: object
+        escalations:
+          type: array
+          items:
+            type: object
+        open_disputes:
+          type: integer
+        pending_renewals:
+          type: integer
