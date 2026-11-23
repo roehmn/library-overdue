@@ -3,6 +3,7 @@
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -12,6 +13,7 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -62,6 +64,29 @@ return Application::configure(basePath: dirname(__DIR__))
                     'code' => 'NOT_FOUND',
                     'message' => 'The requested resource was not found.',
                 ]], 404);
+            }
+        });
+
+        // Too many requests (rate limit): tell the client when to retry.
+        $exceptions->render(function (TooManyRequestsHttpException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return response()->json(['error' => [
+                    'code' => 'TOO_MANY_REQUESTS',
+                    'message' => 'Too many attempts. Please wait and try again.',
+                ]], 429, $e->getHeaders());
+            }
+        });
+
+        // Database unreachable (connection refused, server gone away): 503, not a generic 500.
+        // Any other database error falls through to the catch-all below.
+        $exceptions->render(function (QueryException $e, Request $request) {
+            if ($request->is('api/*') && preg_match('/SQLSTATE\[HY000\] \[(2002|2006|2013)\]/', $e->getMessage())) {
+                Log::error('api.database_unavailable', ['class' => get_class($e)]);
+
+                return response()->json(['error' => [
+                    'code' => 'SERVICE_UNAVAILABLE',
+                    'message' => 'The service is temporarily unavailable. Please try again shortly.',
+                ]], 503, ['Retry-After' => '30']);
             }
         });
 

@@ -13,18 +13,20 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 | API routes (contract: docs/openapi.yaml). Laravel adds the /api prefix.
 |--------------------------------------------------------------------------
-| Two layers protect every route below the login:
-|   1. auth:sanctum  - you must hold a valid token (otherwise 401)
-|   2. EnsureRole    - your role must be allowed (otherwise 403)
-| Borrower actions add a third check inside LoanWorkflow: the loan must be the borrower's own.
+| Layers that protect every route below the login:
+|   1. throttle:api  - request limit per user (otherwise 429)
+|   2. auth:sanctum  - you must hold a valid token (otherwise 401)
+|   3. EnsureRole    - your role must be allowed (otherwise 403)
+| Borrower actions add a further check inside LoanWorkflow: the loan must be the borrower's own.
+| The login itself is limited by throttle:login (5 attempts per minute per email and address).
 */
 
 Route::prefix('v1')->group(function () {
 
     // Public: the only endpoint that works without a token.
-    Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         // Any logged-in user.
         Route::get('/auth/me', [AuthController::class, 'me']);
