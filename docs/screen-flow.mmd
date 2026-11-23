@@ -1,0 +1,40 @@
+flowchart TD
+  start(["Open app"]) --> login["Login"]
+  login -->|"422 empty field / 401 wrong password"| login
+  login -->|"200 token and role"| role{"Role?"}
+
+  role -->|borrower| b1
+  role -->|librarian| l1
+  role -->|supervisor| s1
+
+  subgraph BORROWER["Borrower"]
+    b1["My Loans"] --> b2["My Notices"]
+    b1 --> b3["Request Renewal"]
+    b1 --> b4["File Dispute"]
+    b3 -->|"201 requested / 409 not allowed"| b1
+    b4 -->|"422 reason too short"| b4
+    b4 -->|"201 filed"| b1
+  end
+
+  subgraph LIBRARIAN["Librarian"]
+    l1["Loans Review"] --> l2["Loan Detail"]
+    l2 --> l3["Record Return"]
+    l2 --> l4["Decide Renewal"]
+    l2 --> l5["Decide Dispute"]
+    l3 -->|"200 closed / 409 already closed"| l2
+    l4 -->|"200 / 409 already decided"| l2
+    l5 -->|"422 note too short"| l5
+    l5 -->|"200 decided"| l2
+    l1 --> l6["Manual Review Queue"]
+    l6 --> l7["Resolve Notice"]
+    l7 -->|"200 resolved / 409"| l6
+  end
+
+  subgraph SUPERVISOR["Supervisor: all librarian screens plus"]
+    s1["Daily Summary"] --> l1
+    s1 --> l6
+  end
+
+  any["Any screen"] -->|"401 session expired"| login
+  any -->|"403 role not allowed"| denied["Not Allowed page"]
+  any -->|"network or 5xx"| retry["Error state with Retry"]
